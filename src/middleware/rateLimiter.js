@@ -1,5 +1,4 @@
 const redis = require("../config/redis");
-const pool = require("../config/db");
 const fs = require("fs");
 const path = require("path");
 const { getTier } = require("../config/tierStore");
@@ -45,16 +44,10 @@ async function rateLimiter(request, reply) {
       refillRate,
       Math.floor(Date.now() / 1000)
     );
+    reply.header("X-RateLimit-Remaining", remaining);
+    reply.header("X-RateLimit-Limit", capacity);
 
-    console.log("Allowed:", allowed, "Remaining:", remaining);
-    
-    if (allowed === 0) {
-      return reply.status(429).send({
-        error: "Rate limit exceeded",
-        tier,
-      });
-    }
-
+       
     if (!allowed) {
       return reply.status(429).send({
         error: "Rate limit exceeded",
@@ -63,8 +56,8 @@ async function rateLimiter(request, reply) {
     }
 
   } catch (err) {
-    console.error("Rate limiter error:", err);
-    return reply.status(500).send({ error: "Internal server error" });
+    console.error("Rate limiter failed, allowing request:", err);
+    return;
   }
 }
 

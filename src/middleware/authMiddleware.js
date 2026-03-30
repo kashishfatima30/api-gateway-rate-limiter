@@ -12,13 +12,23 @@ async function authMiddleware(request, reply) {
     }
    
     const [rows] = await db.execute(
-      "SELECT api_key FROM api_keys WHERE api_key = ?",
+      "SELECT user_id FROM api_keys WHERE api_key = ?",
       [apiKey]
     );
 
     if (rows.length === 0) {
       return reply.status(401).send({
         error: "Invalid API key",
+      });
+    }
+    console.log("JWT user:", request.user);
+    console.log("API key owner:", rows[0].user_id);
+    
+    const apiKeyOwnerId = rows[0].user_id;
+
+    if (request.user.id !== apiKeyOwnerId) {
+      return reply.status(403).send({
+        error: "API key does not belong to user",
       });
     }
 

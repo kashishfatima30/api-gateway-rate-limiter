@@ -16,6 +16,7 @@ async function jwtMiddleware(request, reply) {
 
     // attach user info
     request.user = decoded;
+    
 
   } catch (err) {
     return reply.status(401).send({

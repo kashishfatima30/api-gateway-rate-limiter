@@ -17,7 +17,7 @@ async function routes(fastify) {
     return reply.status(400).send({ error: "Username required" });
   }
 
-  const token = generateToken({ username });
+  
 
   try {
    
@@ -38,6 +38,7 @@ async function routes(fastify) {
     } else {
       userId = users[0].id;
     }
+    const token = generateToken({ id: userId});
 
     
     const [keys] = await pool.query(
@@ -58,10 +59,10 @@ async function routes(fastify) {
       );
     }
 
-    return {
+    return reply.send({
       token,
       apiKey,
-    };
+    });
 
   } catch (err) {
     console.error(err);
