@@ -1,0 +1,83 @@
+Project: API Gateway Rate Limiter
+
+Tech stack
+- Runtime: Node.js (CommonJS), tested on Node 16/18
+- Web framework: Fastify (`fastify`)
+- HTTP proxy: `@fastify/http-proxy` (used to forward requests to internal services)
+- Redis client: `ioredis` (used for caching and rate-limiter state)
+- Database: MySQL via `mysql2` (used for users and api_keys)
+- Auth: `jsonwebtoken` for JWT generation/verification
+- Env: `dotenv` for environment variables
+- TLS helper: `selfsigned` and included `server.key`/`server.cert` for local HTTPS
+
+Primary files / locations
+- Entry: `src/server.js` (starts HTTPS Fastify server)
+- Routes: `src/routes/gatewayRoutes.js` (login + protected `/api` routes)
+- Middleware: `src/middleware/jwtMiddleware.js`, `src/middleware/authMiddleware.js`, `src/middleware/rateLimiter.js`
+- Rate-limiter Lua: `src/utils/tokenBucket.lua` (atomic token-bucket logic run inside Redis)
+- Tier lookup: `src/config/tierStore.js` (in-memory cache → Redis → MySQL fallback)
+- Redis config: `src/config/redis.js`
+- DB pool: `src/config/db.js`
+- Proxy registrations: `src/services/proxyService.js` (for `/service1` and `/service2`)
+- Example backend services: `services/service1.js`, `services/service2.js`
+
+High-level architecture flow
+
+1) Client request
+- Client connects to the gateway over HTTPS (server uses `server.key`/`server.cert`).
+- Protected API calls live under the `/api` prefix; clients must include:
+  - `Authorization: Bearer <JWT>` header (obtained from `/login`)
+  - `X-API-Key: <api_key>` header (issued on first login)
+
+2) Route handling
+- `src/routes/gatewayRoutes.js` registers public endpoints (e.g., `/login`) and a grouped set of protected routes under `/api`.
+- The protected group attaches three `preHandler` hooks (middleware):
+  1. `jwtMiddleware` — verifies the JWT, attaches `request.user`
+  2. `authMiddleware` — ensures the `X-API-Key` exists and belongs to the authenticated user
+  3. `rateLimiter` — enforces tier-based token-bucket throttling via Redis/Lua
+
+3) Rate limiting logic
+- `rateLimiter` determines the caller's tier via `getTier(apiKey)` in `src/config/tierStore.js`.
+- `tierStore` uses a layered cache: in-memory Map → Redis (`api_tier:<apiKey>`) → MySQL lookup (`api_keys` table). It updates caches to reduce DB hits.
+- The actual token consumption is performed by executing the Lua script `src/utils/tokenBucket.lua` via `ioredis.eval(...)`. The script:
+  - Loads current tokens and last_refill timestamp
+  - Computes refill amount based on elapsed time and tier `refillRate`
+  - Decrements a token if available, writes back tokens and timestamp, and returns `{allowed, tokens}`
+- Headers `X-RateLimit-Remaining` and `X-RateLimit-Limit` are set on responses; when `allowed` is false the gateway returns HTTP 429.
+
+4) Proxying to backend services
+- After passing middleware, requests are forwarded by `@fastify/http-proxy` registrations in `src/services/proxyService.js`:
+  - `/service1/*` → `http://localhost:3001`
+  - `/service2/*` → `http://localhost:3002`
+- Example backends are provided in `services/service1.js` and `services/service2.js`.
+
+5) Persistence and infra
+- Redis is used for rate-limit state and caching tiers; MySQL stores `users` and `api_keys` (see `docker-compose.yml` which includes `redis` and `mysql`).
+
+Example request flow (successful)
+1. Client calls `POST /login` with `{ "username": "alice" }`.
+2. Server creates or looks up `users` and `api_keys`, returns `{ token, apiKey }`.
+3. Client calls `GET /api/service1/` with headers `Authorization: Bearer <token>` and `X-API-Key: <apiKey>`.
+4. `jwtMiddleware` validates the token and sets `request.user`.
+5. `authMiddleware` verifies `apiKey` ownership matches `request.user.id`.
+6. `rateLimiter` checks/consumes a token via Redis+Lua; if allowed, request proceeds.
+7. Request is proxied to `service1` (Fastify at `localhost:3001`) and the response returned to client with rate-limit headers.
+
+Environment variables (used / recommended)
+- `PORT` — gateway port (server uses 3000 by default in code)
+- `REDIS_HOST`, `REDIS_PORT` — Redis connection
+- `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME` — MySQL connection
+- `JWT_SECRET` — JWT signing key
+
+Files to review for details
+- `src/middleware/rateLimiter.js` — limiter integration and Redis eval call
+- `src/utils/tokenBucket.lua` — token-bucket algorithm
+- `src/config/tierStore.js` — tier lookup and caching behavior
+- `src/services/proxyService.js` — upstream proxies
+
+Next steps / suggestions
+- Add automated tests for the rate-limiter behavior (unit + integration with Redis).
+- Add configurable tier definitions (externalize `tiers` from `rateLimiter.js`).
+- Harden production deployment: use managed Redis, secure TLS certs, and connection pooling/metrics.
+
+End of explanation

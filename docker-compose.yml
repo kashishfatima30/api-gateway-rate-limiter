@@ -1,18 +1,85 @@
-version: "3"
-
 services:
+  gateway1:
+    build: .
+    container_name: gateway1
+    depends_on:
+      - redis
+      - mysql
+    environment:
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_USER: root
+      DB_PASSWORD: password
+      DB_NAME: gateway
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+    ports:
+      - "3000:3000"
+
+  gateway2:
+    build: .
+    container_name: gateway2
+    depends_on:
+      - redis
+      - mysql
+    environment:
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_USER: root
+      DB_PASSWORD: password
+      DB_NAME: gateway
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+    ports:
+      - "3001:3000"
+
+  service1:
+    build: .
+    container_name: service1
+    command: node services/service1.js
+    ports:
+      - "4001:4001"   
+
+  service2:
+    build: .
+    container_name: service2
+    command: node services/service2.js
+    ports:
+      - "4002:4002"     
+
   redis:
     image: redis:latest
+    container_name: redis
     ports:
       - "6379:6379"
+    volumes:
+      - redis-data:/data
 
   mysql:
     image: mysql:8
+    container_name: mysql
     environment:
       MYSQL_ROOT_PASSWORD: password
       MYSQL_DATABASE: gateway
     ports:
       - "3307:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+
+  nginx:
+    image: nginx:latest
+    container_name: nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf
+      - ./server.cert:/etc/nginx/server.cert
+      - ./server.key:/etc/nginx/server.key
+    depends_on:
+      - gateway1
+      - gateway2
+
 volumes:
   redis-data:
   mysql-data:

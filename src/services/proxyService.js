@@ -1,11 +1,11 @@
 module.exports = async function (fastify) {
   fastify.register(require("@fastify/http-proxy"), {
-    upstream: "http://localhost:3001",
+    upstream: "http://service1:4001",
     prefix: "/service1",
   });
 
   fastify.register(require("@fastify/http-proxy"), {
-    upstream: "http://localhost:3002",
+    upstream: "http://service2:4002",
     prefix: "/service2",
   });
 };

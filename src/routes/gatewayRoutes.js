@@ -8,7 +8,13 @@ const pool = require("../config/db");
 
 async function routes(fastify) {
 
-  
+  fastify.get("/login", async (request, reply) => {
+    return {
+      message: "API Gateway is running 🚀",
+      instance: process.env.HOSTNAME
+    };
+  });
+
   fastify.post("/login", async (request, reply) => {
   
   const { username } = request.body;
@@ -62,6 +68,7 @@ async function routes(fastify) {
     return reply.send({
       token,
       apiKey,
+      instance: process.env.HOSTNAME
     });
 
   } catch (err) {
